@@ -85,6 +85,19 @@ body {
   background: white;
 }
 
+/* Filter text input to match other controls */
+.field input#filterTerms,
+.row input[type="text"] {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid #e6e6e6;
+  font-size: 13px;
+  color: #222;
+  background: white;
+  box-sizing: border-box;
+}
+
 .row input[type="checkbox"] {
   width: 18px;
   height: 18px;
@@ -110,8 +123,10 @@ body {
 
 .buttons-row {
   display: flex;
+  flex-direction: row;
   gap: 8px;
   align-items: center;
+  justify-content: flex-start;
 }
 
 .btn-primary {
@@ -350,20 +365,6 @@ body {
 }
 
 .muted {
-
-  /* filter input styling */
-  .field input#filterTerms {
-    width: 100%;
-    padding: 8px 10px;
-    border-radius: 8px;
-    border: 1px solid #e6e6e6;
-    font-size: 13px;
-  }
-
-  .tiny-info[title] {
-    cursor: pointer;
-  }
-
   color: #666;
   font-size: 12px;
 }
