@@ -1,0 +1,129 @@
+<!doctype html>
+<html>
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Instagram AutoFollow</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+
+<body>
+  <div class="container modern">
+    <header class="header">
+      <h2>Instagram AutoFollow</h2>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span id="statusIndicator" class="status stopped">Stopped</span>
+        <button id="helpBtn" class="icon-btn" aria-label="Help">ℹ</button>
+        <button id="toggleManualBtn" class="icon-btn" title="Show manual add">M</button>
+      </div>
+    </header>
+
+    <div id="helpPanel" class="help-panel hidden">
+      <strong>Quick tips</strong>
+      <ul>
+        <li>Open a profile and click <em>Followers</em> (modal) before starting.</li>
+        <li>Safe defaults: Interval 3000–10000 ms, Per tick = 1, Randomize = on.</li>
+        <li>Start slow and monitor account activity — automation can be risky.</li>
+      </ul>
+    </div>
+
+    <div class="controls modern-grid">
+      <div class="field">
+        <label>Interval (ms)</label>
+        <div class="row">
+          <input id="intervalMs" type="number" value="3000" />
+          <button class="tiny-info icon-btn" data-info="Delay between ticks (ms). Recommended 3000-10000">i</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Per tick</label>
+        <div class="row">
+          <input id="perTick" type="number" value="1" min="1" />
+          <button class="tiny-info icon-btn"
+            data-info="How many follow clicks to attempt per tick. Keep to 1 for safety">i</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Scroll amount (px)</label>
+        <div class="row">
+          <input id="scrollAmount" type="number" value="300" />
+          <button class="tiny-info icon-btn"
+            data-info="Pixels to nudge the followers modal to load more users">i</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Randomize</label>
+        <div class="row">
+          <input id="randomize" type="checkbox" />
+          <button class="tiny-info icon-btn"
+            data-info="Add jitter to the interval to avoid perfectly regular timing">i</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Jitter (ms)</label>
+        <div class="row">
+          <input id="jitterMs" type="number" value="1000" />
+          <button class="tiny-info icon-btn"
+            data-info="Maximum +/- jitter applied to Interval when Randomize is enabled">i</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Filter terms</label>
+        <div class="row">
+          <input id="filterTerms" type="text" placeholder="comma-separated (assignment,helper,exam,essay)" />
+          <button id="resetFilters" class="tiny-info icon-btn" title="Reset to defaults">↺</button>
+        </div>
+        <div class="muted">Accounts with these terms in username or nearby name will be skipped.</div>
+      </div>
+
+      <div class="field buttons-row">
+        <button id="start" class="btn-primary">Start</button>
+        <button id="stop" class="btn-ghost">Stop</button>
+        <button id="clear" class="btn-ghost">Clear</button>
+      </div>
+    </div>
+
+    <div class="metrics modern-metrics">
+      <div class="metric-row"><span>This session</span><strong id="sessionCount">0</strong></div>
+      <div class="metric-row"><span>Total followed</span><strong id="totalFollowed">0</strong></div>
+      <div class="metric-row small"><span>Today</span><strong id="todayCount">0</strong><span
+          class="sep">•</span><span>Yesterday</span><strong id="yesterdayCount">0</strong></div>
+      <div class="metric-row small"><button id="toggleBreakdown" class="link-btn">Show daily breakdown</button></div>
+    </div>
+
+    <div id="dailyBreakdown" class="breakdown hidden"></div>
+
+    <div class="followed modern-panel">
+      <button id="toggleList" class="dropdown-toggle">Followed accounts (<span id="listCount">0</span>) ▾</button>
+      <div id="followedListWrap" class="followed-list hidden">
+        <ul id="followedList"></ul>
+      </div>
+    </div>
+
+    <div id="manualPanel" class="manual-panel modern-panel hidden">
+      <h3>Manual Add</h3>
+      <div class="small-instructions">If the extension missed an account, copy the account element's
+        <code>outerHTML</code> from DevTools and paste it below, or paste a username directly.</div>
+      <textarea id="manualHtml" placeholder="Paste copied outerHTML here" rows="4"></textarea>
+      <div class="manual-actions">
+        <button id="parseAddBtn" class="btn-ghost">Parse & Add</button>
+        <span class="muted">or</span>
+        <input id="manualUsername" placeholder="username (without @)" />
+        <button id="addUsernameBtn" class="btn-primary">Add Username</button>
+      </div>
+      <div id="manualMsg" class="muted"></div>
+      <div class="manual-help muted">Tip: in DevTools Elements panel select the account node then right-click → Copy →
+        Copy outerHTML. Alternatively, run <code>$0.outerHTML</code> in Console after selecting the node.</div>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+
+</html>
