@@ -44,18 +44,29 @@ function updateStatus() {
     if (!tab) return;
     sendToContent(tab.id, { command: 'status' }, (resp) => {
       if (!resp) return;
-      const running = !!resp.running;
+      const runningFollow = !!resp.runningFollow;
+      const runningUnfollow = !!resp.runningUnfollow;
+      const anyRunning = runningFollow || runningUnfollow;
       const ind = document.getElementById('statusIndicator');
       if (ind) {
-        ind.textContent = running ? 'Running' : 'Stopped';
-        ind.classList.toggle('running', running);
-        ind.classList.toggle('stopped', !running);
+        if (runningFollow && runningUnfollow) ind.textContent = 'Running (Follow+Unfollow)';
+        else if (runningFollow) ind.textContent = 'Running (Follow)';
+        else if (runningUnfollow) ind.textContent = 'Running (Unfollow)';
+        else ind.textContent = 'Stopped';
+        ind.classList.toggle('running', anyRunning);
+        ind.classList.toggle('stopped', !anyRunning);
       }
       const startBtn = document.getElementById('start');
       const stopBtn = document.getElementById('stop');
+      const startUnfollowBtn = document.getElementById('startUnfollow');
+      const stopUnfollowBtn = document.getElementById('stopUnfollow');
       if (startBtn && stopBtn) {
-        startBtn.disabled = running;
-        stopBtn.disabled = !running;
+        startBtn.disabled = runningFollow;
+        stopBtn.disabled = !runningFollow;
+      }
+      if (startUnfollowBtn && stopUnfollowBtn) {
+        startUnfollowBtn.disabled = runningUnfollow;
+        stopUnfollowBtn.disabled = !runningUnfollow;
       }
     });
   });
@@ -138,6 +149,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const jitterInput = document.getElementById('jitterMs');
   const filterTermsInput = document.getElementById('filterTerms');
   const resetFiltersBtn = document.getElementById('resetFilters');
+  const startUnfollowBtn = document.getElementById('startUnfollow');
+  const stopUnfollowBtn = document.getElementById('stopUnfollow');
 
   // session counters (ephemeral per-popup session). Reset when Start is pressed.
   let sessionCount = 0;
@@ -175,6 +188,90 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
+  // Unfollow start/stop
+  if (startUnfollowBtn) {
+    startUnfollowBtn.addEventListener('click', () => {
+      const intervalMs = parseInt(document.getElementById('intervalMs').value, 10) || 3000;
+      const perTick = parseInt(document.getElementById('perTick').value, 10) || 1;
+      const options = {
+        scrollAmount: parseInt(scrollAmountInput.value, 10) || 300,
+        randomize: !!randomizeInput.checked,
+        jitterMs: parseInt(jitterInput.value, 10) || 1000
+      };
+      // store options and attempt to start unfollowing in the active tab
+      chrome.storage.local.set({ autoUnfollowOptions: options });
+      console.log('Starting unfollow with options', options);
+      if (startUnfollowBtn) startUnfollowBtn.disabled = true;
+      const statEl = document.getElementById('statusIndicator');
+      if (statEl) { statEl.textContent = 'Starting Unfollow...'; statEl.classList.remove('stopped'); statEl.classList.add('running'); }
+      const opMsg = document.getElementById('operationMsg');
+      if (opMsg) opMsg.textContent = 'Injecting content script...';
+      queryActiveTab((tab) => {
+        if (!tab) {
+          if (opMsg) opMsg.textContent = 'No active tab found.';
+          alert('No active tab');
+          if (startUnfollowBtn) startUnfollowBtn.disabled = false;
+          if (statEl) { statEl.textContent = 'Stopped'; statEl.classList.remove('running'); statEl.classList.add('stopped'); }
+          return;
+        }
+        // explicitly inject content.js first to ensure listener exists
+        try {
+          chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] }, () => {
+            if (chrome.runtime.lastError) {
+              const err = chrome.runtime.lastError.message || 'Unknown inject error';
+              console.warn('scripting.executeScript error', err);
+              if (opMsg) opMsg.textContent = 'Injection error: ' + err;
+              alert('Could not inject content script: ' + err);
+              if (startUnfollowBtn) startUnfollowBtn.disabled = false;
+              if (statEl) { statEl.textContent = 'Stopped'; statEl.classList.remove('running'); statEl.classList.add('stopped'); }
+              return;
+            }
+            if (opMsg) opMsg.textContent = 'Starting unfollow in page...';
+            // now send start message
+            sendToContent(tab.id, { command: 'startUnfollow', intervalMs, perTick, options }, (resp) => {
+              if (!resp) {
+                console.warn('startUnfollow: no response');
+                if (opMsg) opMsg.textContent = 'No response from content script.';
+                alert('No response from content script — ensure you have an Instagram tab open.');
+                if (startUnfollowBtn) startUnfollowBtn.disabled = false;
+                if (statEl) { statEl.textContent = 'Stopped'; statEl.classList.remove('running'); statEl.classList.add('stopped'); }
+                return;
+              }
+              if (resp.error) {
+                console.warn('startUnfollow error', resp.error);
+                if (opMsg) opMsg.textContent = 'Error: ' + resp.error;
+                alert('Error starting unfollow: ' + resp.error);
+                if (startUnfollowBtn) startUnfollowBtn.disabled = false;
+                if (statEl) { statEl.textContent = 'Stopped'; statEl.classList.remove('running'); statEl.classList.add('stopped'); }
+                return;
+              }
+              console.log('startUnfollow response', resp);
+              if (opMsg) opMsg.textContent = 'Unfollow started';
+              updateStatus();
+            });
+          });
+        } catch (e) {
+          console.warn('inject failed', e && e.message);
+          if (opMsg) opMsg.textContent = 'Injection failed: ' + (e && e.message);
+          alert('Injection failed: ' + (e && e.message));
+          if (startUnfollowBtn) startUnfollowBtn.disabled = false;
+          if (statEl) { statEl.textContent = 'Stopped'; statEl.classList.remove('running'); statEl.classList.add('stopped'); }
+        }
+      });
+    });
+  }
+
+  if (stopUnfollowBtn) {
+    stopUnfollowBtn.addEventListener('click', () => {
+      queryActiveTab((tab) => {
+        if (!tab) return;
+        sendToContent(tab.id, { command: 'stopUnfollow' }, (resp) => {
+          updateStatus();
+        });
+      });
+    });
+  }
+
   stopBtn.addEventListener('click', () => {
     queryActiveTab((tab) => {
       if (!tab) return;
@@ -194,16 +291,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // refresh UI
   refreshList();
+  try { refreshUnfollowList(); } catch (e) {}
   updateStatus();
 
   // load saved options (including filters)
-  chrome.storage.local.get({ autoFollowOptions: { scrollAmount: 300, randomize: false, jitterMs: 1000, filters: ['assignment','helper','exam','essay'] } }, (res) => {
+  chrome.storage.local.get({
+    autoFollowOptions: { scrollAmount: 300, randomize: false, jitterMs: 1000, filters: ['assignment','helper','exam','essay'] },
+    autoUnfollowOptions: { scrollAmount: 300, randomize: false, jitterMs: 1000, filterActive: false, filters: [] }
+  }, (res) => {
     const o = res.autoFollowOptions || {};
     scrollAmountInput.value = o.scrollAmount || 300;
     randomizeInput.checked = !!o.randomize;
     jitterInput.value = o.jitterMs || 1000;
     const filters = o.filters || ['assignment','helper','exam','essay'];
     if (filterTermsInput) filterTermsInput.value = filters.join(',');
+
+    const u = res.autoUnfollowOptions || {};
+    // legacy: keep scroll/randomize/jitter if stored
+    if (u.scrollAmount) scrollAmountInput.value = u.scrollAmount;
+    if (typeof u.randomize !== 'undefined') randomizeInput.checked = !!u.randomize;
+    if (u.jitterMs) jitterInput.value = u.jitterMs;
   });
 
   if (resetFiltersBtn && filterTermsInput) {
@@ -213,9 +320,35 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // refresh unfollow list
+  function refreshUnfollowList() {
+    chrome.storage.local.get({ unfollowedAccounts: [] }, (res) => {
+      const arr = (res.unfollowedAccounts || []).slice().sort((a,b)=>b.ts - a.ts);
+      const total = arr.length;
+      const countEl = document.getElementById('unfollowedListCount');
+      if (countEl) countEl.innerText = total;
+      const ul = document.getElementById('unfollowedList');
+      if (!ul) return;
+      ul.innerHTML = '';
+      for (const item of arr) {
+        const li = document.createElement('li');
+        const d = new Date(item.ts);
+        const name = document.createElement('span');
+        name.textContent = item.username;
+        const t = document.createElement('time');
+        t.dateTime = new Date(item.ts).toISOString();
+        t.textContent = d.toLocaleString();
+        li.appendChild(name);
+        li.appendChild(t);
+        ul.appendChild(li);
+      }
+    });
+  }
+
   // also poll for updates periodically
   setInterval(() => {
     refreshList();
+    refreshUnfollowList();
     updateStatus();
   }, 2000);
 
@@ -275,6 +408,25 @@ document.addEventListener('DOMContentLoaded', () => {
     toggleList.addEventListener('click', () => {
       followedWrap.classList.toggle('hidden');
       toggleList.classList.toggle('open');
+    });
+  }
+
+  // collapse/expand unfollowed list and clear history
+  const toggleUnfollowList = document.getElementById('toggleUnfollowList');
+  const unfollowedWrap = document.getElementById('unfollowedListWrap');
+  const clearUnfollowedBtn = document.getElementById('clearUnfollowed');
+  if (toggleUnfollowList && unfollowedWrap) {
+    toggleUnfollowList.addEventListener('click', () => {
+      unfollowedWrap.classList.toggle('hidden');
+      toggleUnfollowList.classList.toggle('open');
+    });
+  }
+  if (clearUnfollowedBtn) {
+    clearUnfollowedBtn.addEventListener('click', () => {
+      if (!confirm('Clear unfollowed accounts history?')) return;
+      chrome.storage.local.set({ unfollowedAccounts: [] }, () => {
+        refreshUnfollowList();
+      });
     });
   }
 
@@ -385,16 +537,20 @@ document.addEventListener('DOMContentLoaded', () => {
   // Listen for followedAccounts changes and increment session counter when sessionActive
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local') return;
-    if (!changes.followedAccounts) return;
     try {
-      const oldVal = changes.followedAccounts.oldValue || [];
-      const newVal = changes.followedAccounts.newValue || [];
-      if (sessionActive && newVal.length > oldVal.length) {
-        const added = newVal.length - oldVal.length;
-        setSessionCount(sessionCount + added);
+      if (changes.followedAccounts) {
+        const oldVal = changes.followedAccounts.oldValue || [];
+        const newVal = changes.followedAccounts.newValue || [];
+        if (sessionActive && newVal.length > oldVal.length) {
+          const added = newVal.length - oldVal.length;
+          setSessionCount(sessionCount + added);
+        }
+      }
+      if (changes.unfollowedAccounts) {
+        try { refreshUnfollowList(); } catch (e) {}
       }
     } catch (e) {
-      console.warn('session count update error', e);
+      console.warn('storage change handler error', e);
     }
   });
 });

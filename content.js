@@ -117,6 +117,22 @@
     }
   }
 
+  function saveUnfollowed(username) {
+    if (!username) return;
+    try {
+      chrome.storage.local.get({ unfollowedAccounts: [] }, (res) => {
+        const arr = res.unfollowedAccounts || [];
+        // avoid duplicate consecutive entries
+        if (!arr.length || arr[0].username !== username) {
+          arr.unshift({ username: username, ts: Date.now() });
+          chrome.storage.local.set({ unfollowedAccounts: arr });
+        }
+      });
+    } catch (e) {
+      // ignore storage errors
+    }
+  }
+
   function clickNext() {
     // choose from allowed candidates (non-blacklisted)
     const candidates = getCandidateButtons();
@@ -216,6 +232,153 @@
     window.igAutoFollow.intervalId = setTimeout(runTick, nextDelay);
   }
 
+  // --- Unfollow runner ---
+  function isFollowingButton(btn) {
+    if (!btn) return false;
+    try {
+      if (btn.disabled) return false;
+      if (!(btn.offsetWidth || btn.offsetHeight || btn.getClientRects().length)) return false;
+    } catch (e) {}
+    const txt = (btn.innerText || '').trim();
+    if (!txt) return false;
+    const lower = txt.toLowerCase();
+    // we look for buttons that indicate the account is currently followed
+    if (lower.includes('following') || lower.includes('requested')) return true;
+    return false;
+  }
+
+  function getUnfollowCandidateButtons() {
+    try {
+      return Array.from(document.querySelectorAll('button')).filter(isFollowingButton);
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function clickUnfollowCandidate(btn, filters, filterActive) {
+    if (!btn) return;
+    try {
+      // extract username nearby
+      const uname = getUsernameFromButton(btn) || '';
+      const lowFilters = (filters || []).map(f => (f||'').toLowerCase()).filter(Boolean);
+      if (filterActive && lowFilters.length) {
+        const u = (uname || '').toLowerCase();
+        let matched = false;
+        if (u) {
+          for (const f of lowFilters) if (u.includes(f)) matched = true;
+        }
+        if (!matched) {
+          // try scanning parent text for matches
+          let el = btn.closest('li, div') || btn.parentElement;
+          for (let i = 0; i < 6 && el; i++) {
+            try {
+              const txt = (el.innerText || '').toLowerCase();
+              for (const f of lowFilters) if (txt.includes(f)) matched = true;
+            } catch (e) {}
+            el = el.parentElement;
+          }
+        }
+        if (!matched) return; // do not unfollow if filter active and no match
+      }
+
+      // Click the 'Following' button to open confirmation, then click 'Unfollow' in the dialog (if present)
+      btn.click();
+      setTimeout(() => {
+        try {
+          // Find a visible button that says 'Unfollow'
+          const candidates = Array.from(document.querySelectorAll('button')).filter(b => {
+            try {
+              const t = (b.innerText || '').trim().toLowerCase();
+              return t === 'unfollow' || t === 'unfollow';
+            } catch (e) { return false; }
+          });
+          if (candidates.length) {
+            candidates[0].click();
+            try { saveUnfollowed(uname || ''); } catch (e) {}
+          } else {
+            // some UI uses a span inside a button; try to find elements with text 'Unfollow'
+            const spans = Array.from(document.querySelectorAll('*')).filter(el => (el.innerText||'').trim().toLowerCase() === 'unfollow');
+            if (spans.length) {
+              spans[0].click();
+              try { saveUnfollowed(uname || ''); } catch (e) {}
+            }
+          }
+        } catch (e) {}
+      }, 450);
+    } catch (e) {}
+  }
+
+  // Unfollow runner (separate loop)
+  window.igAutoFollow.unfollow = window.igAutoFollow.unfollow || { intervalId: null, running: false, settings: { intervalMs: 3000, perTick: 1, scrollAmount: 300, randomize: false, jitterMs: 1000, clickGap: 350 } };
+
+  function runTickUnfollow() {
+    if (!window.igAutoFollow.unfollow.running) return;
+    const s = window.igAutoFollow.unfollow.settings;
+
+    for (let i = 0; i < s.perTick; i++) {
+      const baseGap = s.clickGap || 350;
+      let gap = baseGap * i;
+      if (s.randomize) gap += randomBetween(-Math.min(baseGap / 2, s.jitterMs), Math.min(baseGap / 2, s.jitterMs));
+      setTimeout(() => {
+        try {
+          const candidates = getUnfollowCandidateButtons();
+          if (!candidates.length) return;
+          // pick first visible candidate and unfollow
+          for (const b of candidates) {
+            clickUnfollowCandidate(b);
+            break;
+          }
+        } catch (e) {}
+      }, Math.max(0, gap));
+    }
+
+    // scroll if no remaining following buttons visible
+    try {
+      const afterDelay = (s.clickGap || 300) * Math.max(1, s.perTick) + 300;
+      setTimeout(() => {
+        try {
+          if (!window.igAutoFollow.unfollow.running) return;
+          const remaining = getUnfollowCandidateButtons();
+          if (!remaining.length) {
+            const container = findScrollableContainer();
+            try {
+              if (container && container !== document.scrollingElement && container !== document.documentElement) {
+                container.scrollBy({ top: (s.scrollAmount || 300), behavior: 'smooth' });
+              } else {
+                window.scrollBy(0, (s.scrollAmount || 300));
+              }
+            } catch (e) { try { window.scrollBy(0, (s.scrollAmount || 300)); } catch (_) {} }
+          }
+        } catch (e) {}
+      }, afterDelay);
+    } catch (e) {}
+
+    let nextDelay = s.intervalMs || 3000;
+    if (s.randomize && s.jitterMs) {
+      nextDelay = Math.max(500, nextDelay + randomBetween(-s.jitterMs, s.jitterMs));
+    }
+    window.igAutoFollow.unfollow.intervalId = setTimeout(runTickUnfollow, nextDelay);
+  }
+
+  function startUnfollow(intervalMs, perTick, options) {
+    if (window.igAutoFollow.unfollow.running) return;
+    window.igAutoFollow.unfollow.running = true;
+    if (intervalMs) window.igAutoFollow.unfollow.settings.intervalMs = intervalMs;
+    if (perTick) window.igAutoFollow.unfollow.settings.perTick = perTick;
+    if (options && typeof options === 'object') {
+      for (const k of Object.keys(options)) {
+        window.igAutoFollow.unfollow.settings[k] = options[k];
+      }
+    }
+    runTickUnfollow();
+  }
+
+  function stopUnfollow() {
+    if (window.igAutoFollow.unfollow.intervalId) clearTimeout(window.igAutoFollow.unfollow.intervalId);
+    window.igAutoFollow.unfollow.intervalId = null;
+    window.igAutoFollow.unfollow.running = false;
+  }
+
   function start(intervalMs, perTick, options) {
     if (window.igAutoFollow.running) return;
     window.igAutoFollow.running = true;
@@ -243,11 +406,17 @@
     if (msg.command === 'start') {
       start(msg.intervalMs, msg.perTick, msg.options);
       sendResponse({ status: 'started', settings: window.igAutoFollow.settings });
+    } else if (msg.command === 'startUnfollow') {
+      startUnfollow(msg.intervalMs, msg.perTick, msg.options);
+      sendResponse({ status: 'unfollow_started', settings: window.igAutoFollow.unfollow.settings });
     } else if (msg.command === 'stop') {
       stop();
       sendResponse({ status: 'stopped' });
+    } else if (msg.command === 'stopUnfollow') {
+      stopUnfollow();
+      sendResponse({ status: 'unfollow_stopped' });
     } else if (msg.command === 'status') {
-      sendResponse({ running: !!window.igAutoFollow.running, settings: window.igAutoFollow.settings });
+      sendResponse({ runningFollow: !!window.igAutoFollow.running, runningUnfollow: !!(window.igAutoFollow.unfollow && window.igAutoFollow.unfollow.running), settings: { follow: window.igAutoFollow.settings, unfollow: (window.igAutoFollow.unfollow && window.igAutoFollow.unfollow.settings) || {} } });
     } else if (msg.command === 'getList') {
       chrome.storage.local.get({ followedAccounts: [] }, (res) => {
         sendResponse({ followedAccounts: res.followedAccounts || [] });
@@ -260,4 +429,8 @@
   // expose simple API on window for debugging
   window.igAutoFollow.start = start;
   window.igAutoFollow.stop = stop;
+  if (window.igAutoFollow.unfollow) {
+    window.igAutoFollow.unfollow.start = startUnfollow;
+    window.igAutoFollow.unfollow.stop = stopUnfollow;
+  }
 })();

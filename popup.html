@@ -82,11 +82,19 @@
         <div class="muted">Accounts with these terms in username or nearby name will be skipped.</div>
       </div>
 
+      <!-- Unfollow will apply to all accounts (no per-term filter) -->
+
       <div class="field buttons-row">
-        <button id="start" class="btn-primary">Start</button>
-        <button id="stop" class="btn-ghost">Stop</button>
+        <button id="start" class="btn-primary">Start Follow</button>
+        <button id="stop" class="btn-ghost">Stop Follow</button>
         <button id="clear" class="btn-ghost">Clear</button>
       </div>
+
+      <div class="field buttons-row">
+        <button id="startUnfollow" class="btn-primary">Start Unfollow</button>
+        <button id="stopUnfollow" class="btn-ghost">Stop Unfollow</button>
+      </div>
+      <div class="muted" id="operationMsg" style="padding-top:6px"></div>
     </div>
 
     <div class="metrics modern-metrics">
@@ -103,6 +111,14 @@
       <button id="toggleList" class="dropdown-toggle">Followed accounts (<span id="listCount">0</span>) ▾</button>
       <div id="followedListWrap" class="followed-list hidden">
         <ul id="followedList"></ul>
+      </div>
+    </div>
+
+    <div class="followed modern-panel">
+      <button id="toggleUnfollowList" class="dropdown-toggle">Unfollowed accounts (<span id="unfollowedListCount">0</span>) ▾</button>
+      <div id="unfollowedListWrap" class="followed-list hidden">
+        <div style="display:flex;justify-content:flex-end;padding:6px 8px"><button id="clearUnfollowed" class="btn-ghost">Clear Unfollow History</button></div>
+        <ul id="unfollowedList"></ul>
       </div>
     </div>
 
