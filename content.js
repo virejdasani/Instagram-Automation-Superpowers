@@ -421,9 +421,9 @@
       chrome.storage.local.get({ followedAccounts: [] }, (res) => {
         sendResponse({ followedAccounts: res.followedAccounts || [] });
       });
-      return true; // indicates async response
+      return true; // indicates async response for getList
     }
-    return true;
+    return false; // return false for synchronous responses
   });
 
   // expose simple API on window for debugging
